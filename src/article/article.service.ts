@@ -6,6 +6,9 @@ import { Comment } from './comment.entity';
 import { UserEntity } from '../user/user.entity';
 import { FollowsEntity } from '../profile/follows.entity';
 import { CreateArticleDto } from './dto';
+import { marked } from 'marked';
+import { JSDOM } from 'jsdom';
+import * as DOMPurify from 'dompurify';
 
 import {ArticleRO, ArticlesRO, CommentsRO} from './article.interface';
 const slug = require('slug');
@@ -93,8 +96,15 @@ export class ArticleService {
     return {articles, articlesCount};
   }
 
+  convertMarkdownStrToHtmlAndSanitize(markdown : string){
+    const window = new JSDOM('').window;
+    const purify = DOMPurify(window);
+    return purify.sanitize(marked.parse(markdown));
+  }
+
   async findOne(where): Promise<ArticleRO> {
     const article = await this.articleRepository.findOne(where);
+    article.body = this.convertMarkdownStrToHtmlAndSanitize(article.body);
     return {article};
   }
 
@@ -109,6 +119,17 @@ export class ArticleService {
     await this.commentRepository.save(comment);
     article = await this.articleRepository.save(article);
     return {article}
+  }
+
+  async getArticleAuthorAndCommentsBySlug(slug : string){
+    let article = await getRepository(ArticleEntity)
+      .createQueryBuilder('article')
+      .leftJoinAndSelect('article.author', 'author')
+      .leftJoinAndSelect('article.comments','comments')
+      .where(`article.slug = :slug`,{slug})
+      .getOne();
+    article.body = this.convertMarkdownStrToHtmlAndSanitize(article.body);
+    return {article};
   }
 
   async deleteComment(slug: string, id: string): Promise<ArticleRO> {
@@ -175,6 +196,7 @@ export class ArticleService {
     article.slug = this.slugify(articleData.title);
     article.tagList = articleData.tagList || [];
     article.comments = [];
+    article.body = articleData.body;
 
     const newArticle = await this.articleRepository.save(article);
 
